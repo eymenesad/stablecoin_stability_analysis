@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # Configuration
-RESULTS_FILE = 'reports/metrics/modeling_results_with_predictions.csv'
+RESULTS_FILE = 'reports/metrics/modeling_results_predictive.csv'
 FIGURES_DIR = 'reports/figures'
 
 def load_results():
@@ -17,33 +17,43 @@ def load_results():
 
 def plot_clustering(df):
     """
-    Plots clusters. Since we don't have PCA components in the CSV, 
-    we'll plot Volatility vs Deviation colored by Cluster.
+    Plots clusters.
     """
     plt.figure(figsize=(10, 6))
     sns.scatterplot(data=df, x='volatility_24h', y='deviation_abs', hue='cluster', palette='viridis', alpha=0.6)
     plt.title('Clustering Results: Volatility vs Deviation')
     plt.xlabel('Volatility (24h)')
     plt.ylabel('Absolute Deviation')
+    plt.yscale('log') # Log scale might be better for deviation
+    plt.xscale('log')
     plt.savefig(os.path.join(FIGURES_DIR, 'clustering_clusters.png'))
     plt.close()
     print("Saved clustering_clusters.png")
 
 def plot_classification_confusion(df):
     """
-    Plots confusion matrix for Random Forest classification.
+    Plots confusion matrix for Random Forest classification (Test Set only).
     """
-    # Filter out rows where we might not have predictions (though we predicted on all)
-    # Ensure labels match
-    y_true = df['stability_label']
-    y_pred = df['pred_class']
+    # Filter for rows where we have predictions (Test Set)
+    test_df = df.dropna(subset=['pred_class'])
     
-    cm = confusion_matrix(y_true, y_pred, labels=['High', 'Medium', 'Low'])
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['High', 'Medium', 'Low'])
+    if test_df.empty:
+        print("No predictions found for classification.")
+        return
+
+    y_true = test_df['target_label_1h']
+    y_pred = test_df['pred_class']
+    
+    labels = ['High', 'Medium', 'Low']
+    # Check if all labels exist
+    present_labels = [l for l in labels if l in y_true.unique() or l in y_pred.unique()]
+    
+    cm = confusion_matrix(y_true, y_pred, labels=present_labels)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=present_labels)
     
     plt.figure(figsize=(8, 6))
     disp.plot(cmap='Blues')
-    plt.title('Classification Confusion Matrix')
+    plt.title('Classification Confusion Matrix (Test Set - Future Prediction)')
     plt.savefig(os.path.join(FIGURES_DIR, 'classification_confusion_matrix.png'))
     plt.close()
     print("Saved classification_confusion_matrix.png")
@@ -52,59 +62,69 @@ def plot_anomaly_detection(df):
     """
     Plots price deviation over time with anomalies highlighted.
     """
-    # Take a subset or a specific symbol for clarity, e.g., USDC
-    symbol = 'USDC'
-    subset = df[df['symbol'] == symbol].copy()
+    # Plot for each symbol
+    symbols = df['symbol'].unique()
     
-    if subset.empty:
-        # Fallback to first symbol
-        symbol = df['symbol'].iloc[0]
+    for symbol in symbols:
         subset = df[df['symbol'] == symbol].copy()
+        if subset.empty:
+            continue
+            
+        subset['timestamp'] = pd.to_datetime(subset['timestamp'])
+        subset = subset.sort_values('timestamp')
         
-    subset['timestamp'] = pd.to_datetime(subset['timestamp'])
-    subset = subset.sort_values('timestamp')
-    
-    plt.figure(figsize=(12, 6))
-    plt.plot(subset['timestamp'], subset['deviation_pct'], label='Deviation %', color='blue', alpha=0.5)
-    
-    # Anomalies
-    anomalies = subset[subset['anomaly'] == -1]
-    plt.scatter(anomalies['timestamp'], anomalies['deviation_pct'], color='red', label='Anomaly', s=20, zorder=5)
-    
-    plt.title(f'Anomaly Detection: {symbol} Deviation')
-    plt.xlabel('Date')
-    plt.ylabel('Deviation %')
-    plt.legend()
-    plt.savefig(os.path.join(FIGURES_DIR, 'anomaly_detection_timeseries.png'))
-    plt.close()
-    print("Saved anomaly_detection_timeseries.png")
+        plt.figure(figsize=(12, 6))
+        plt.plot(subset['timestamp'], subset['deviation_pct'], label='Deviation %', color='blue', alpha=0.5)
+        
+        # Anomalies
+        anomalies = subset[subset['anomaly'] == -1]
+        if not anomalies.empty:
+            plt.scatter(anomalies['timestamp'], anomalies['deviation_pct'], color='red', label='Anomaly', s=20, zorder=5)
+        
+        plt.title(f'Anomaly Detection: {symbol} Deviation')
+        plt.xlabel('Date')
+        plt.ylabel('Deviation %')
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join(FIGURES_DIR, f'anomaly_detection_{symbol}.png'))
+        plt.close()
+        print(f"Saved anomaly_detection_{symbol}.png")
 
 def plot_regression_comparison(df):
     """
-    Compares Ridge vs NN predictions against Actual target.
+    Compares Ridge vs NN predictions against Actual target (Test Set).
     """
-    # Drop NaNs (rows where we couldn't predict target)
-    df_reg = df.dropna(subset=['target_deviation', 'pred_regression', 'pred_nn'])
+    test_df = df.dropna(subset=['pred_regression', 'pred_nn'])
+    
+    if test_df.empty:
+        print("No predictions found for regression.")
+        return
     
     # Scatter plot: Actual vs Predicted
     plt.figure(figsize=(12, 5))
     
     # Ridge
     plt.subplot(1, 2, 1)
-    plt.scatter(df_reg['target_deviation'], df_reg['pred_regression'], alpha=0.3, color='green')
-    plt.plot([df_reg['target_deviation'].min(), df_reg['target_deviation'].max()], 
-             [df_reg['target_deviation'].min(), df_reg['target_deviation'].max()], 'k--', lw=2)
-    plt.title('Ridge Regression: Actual vs Predicted')
-    plt.xlabel('Actual Deviation')
+    plt.scatter(test_df['target_deviation_pct_1h'], test_df['pred_regression'], alpha=0.3, color='green')
+    
+    min_val = min(test_df['target_deviation_pct_1h'].min(), test_df['pred_regression'].min())
+    max_val = max(test_df['target_deviation_pct_1h'].max(), test_df['pred_regression'].max())
+    
+    plt.plot([min_val, max_val], [min_val, max_val], 'k--', lw=2)
+    plt.title('Ridge Regression: Actual vs Predicted (1h Ahead)')
+    plt.xlabel('Actual Deviation (1h ahead)')
     plt.ylabel('Predicted Deviation')
     
     # NN
     plt.subplot(1, 2, 2)
-    plt.scatter(df_reg['target_deviation'], df_reg['pred_nn'], alpha=0.3, color='purple')
-    plt.plot([df_reg['target_deviation'].min(), df_reg['target_deviation'].max()], 
-             [df_reg['target_deviation'].min(), df_reg['target_deviation'].max()], 'k--', lw=2)
-    plt.title('Neural Network: Actual vs Predicted')
-    plt.xlabel('Actual Deviation')
+    plt.scatter(test_df['target_deviation_pct_1h'], test_df['pred_nn'], alpha=0.3, color='purple')
+    
+    min_val_nn = min(test_df['target_deviation_pct_1h'].min(), test_df['pred_nn'].min())
+    max_val_nn = max(test_df['target_deviation_pct_1h'].max(), test_df['pred_nn'].max())
+    
+    plt.plot([min_val_nn, max_val_nn], [min_val_nn, max_val_nn], 'k--', lw=2)
+    plt.title('Neural Network: Actual vs Predicted (1h Ahead)')
+    plt.xlabel('Actual Deviation (1h ahead)')
     plt.ylabel('Predicted Deviation')
     
     plt.tight_layout()

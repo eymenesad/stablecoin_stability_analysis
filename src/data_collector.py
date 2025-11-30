@@ -17,13 +17,13 @@ SINCE_TIMESTAMP = int(START_DATE.timestamp() * 1000)
 # Kraken is good for USD pairs. Binance is good for liquid USDT pairs.
 TARGETS = {
     'coinbase': [
-        'USDT/USD', 'USDC/USD', 'DAI/USD', 
+        'USDT/USD', 'USDC/USD', 'DAI/USD', 'GUSD/USD', 'FRAX/USD',
         'BTC/USD', 'ETH/USD' # For correlation
     ],
     # Some stablecoins might not have direct USD pairs on Kraken or are more active on Binance
     # We will fetch what we can from Kraken, and others from Binance (against USDT usually, which is a limitation but acceptable)
     'binance': [
-        'BUSD/USDT', 'TUSD/USDT', 'FRAX/USDT', 'USDP/USDT', 'GUSD/USDT'
+        'BUSD/USDT', 'TUSD/USDT', 'USDP/USDT', 'USDe/USDT', 'FDUSD/USDT'
     ]
 }
 
