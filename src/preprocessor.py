@@ -43,6 +43,16 @@ def calculate_features(df, symbol_name):
             
     df['stability_label'] = df.apply(get_label, axis=1)
     
+    # 5. Additional Features
+    # Price momentum (% change from 1h, 6h, 24h ago)
+    df['price_change_1h'] = df['close'].pct_change(1)
+    df['price_change_6h'] = df['close'].pct_change(6)
+    df['price_change_24h'] = df['close'].pct_change(24)
+    
+    # Volume features
+    df['volume_ma_24h'] = df['volume'].rolling(window=24).mean()
+    df['volume_std_24h'] = df['volume'].rolling(window=24).std()
+    
     return df
 
 def add_market_context(target_df, btc_df, eth_df):
@@ -67,9 +77,15 @@ def main():
     if not os.path.exists(PROCESSED_DIR):
         os.makedirs(PROCESSED_DIR)
         
-    # Load Market Context (BTC/ETH) first
-    btc_path = os.path.join(RAW_DIR, 'BTC_USD_kraken.csv')
-    eth_path = os.path.join(RAW_DIR, 'ETH_USD_kraken.csv')
+    # Load Market Context (BTC/ETH) first - prefer Coinbase for full history
+    btc_path_coinbase = os.path.join(RAW_DIR, 'BTC_USD_coinbase.csv')
+    eth_path_coinbase = os.path.join(RAW_DIR, 'ETH_USD_coinbase.csv')
+    btc_path_kraken = os.path.join(RAW_DIR, 'BTC_USD_kraken.csv')
+    eth_path_kraken = os.path.join(RAW_DIR, 'ETH_USD_kraken.csv')
+    
+    # Prefer Coinbase for longer history
+    btc_path = btc_path_coinbase if os.path.exists(btc_path_coinbase) else btc_path_kraken
+    eth_path = eth_path_coinbase if os.path.exists(eth_path_coinbase) else eth_path_kraken
     
     btc_df = load_data(btc_path) if os.path.exists(btc_path) else None
     eth_df = load_data(eth_path) if os.path.exists(eth_path) else None

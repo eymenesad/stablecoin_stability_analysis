@@ -16,7 +16,7 @@ SINCE_TIMESTAMP = int(START_DATE.timestamp() * 1000)
 # We prefer USD pairs for stablecoins to measure real deviation.
 # Kraken is good for USD pairs. Binance is good for liquid USDT pairs.
 TARGETS = {
-    'kraken': [
+    'coinbase': [
         'USDT/USD', 'USDC/USD', 'DAI/USD', 
         'BTC/USD', 'ETH/USD' # For correlation
     ],

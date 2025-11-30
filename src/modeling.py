@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.linear_model import Ridge
+from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import classification_report, mean_squared_error, r2_score, silhouette_score
 import joblib
 
@@ -44,7 +45,9 @@ def train_classification(X, y):
     # Time-series split (shuffle=False)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
     
-    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    # Increase estimators and add class balancing for better performance
+    rf = RandomForestClassifier(n_estimators=200, max_depth=20, min_samples_split=5,
+                                  class_weight='balanced', random_state=42, n_jobs=-1)
     rf.fit(X_train, y_train)
     
     y_pred = rf.predict(X_test)
@@ -78,6 +81,24 @@ def train_regression(X, y):
     print(f"R2 Score: {r2:.4f}")
     return ridge
 
+def train_neural_network(X, y):
+    print("\n--- Neural Network (MLPRegressor) ---")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    
+    # Improved MLP architecture with more layers, regularization, and better solver settings
+    mlp = MLPRegressor(hidden_layer_sizes=(128, 64, 32), activation='relu', solver='adam', 
+                       alpha=0.001, learning_rate='adaptive', max_iter=1000, 
+                       early_stopping=True, validation_fraction=0.1, random_state=42)
+    mlp.fit(X_train, y_train)
+    
+    y_pred = mlp.predict(X_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    r2 = r2_score(y_test, y_pred)
+    
+    print(f"RMSE: {rmse:.6f}")
+    print(f"R2 Score: {r2:.4f}")
+    return mlp
+
 def main():
     if not os.path.exists(MODELS_DIR):
         os.makedirs(MODELS_DIR)
@@ -87,9 +108,10 @@ def main():
     print("Loading data...")
     df = load_and_prepare_data()
     
-    # Feature Selection
-    # We use volatility, market context, and time features
-    features = ['volatility_24h', 'btc_close', 'eth_close', 'corr_btc_24h', 'corr_eth_24h', 'hour', 'day_of_week']
+    # Feature Selection - now including momentum and volume features
+    features = ['volatility_24h', 'btc_close', 'eth_close', 'corr_btc_24h', 'corr_eth_24h', 
+                'hour', 'day_of_week', 'price_change_1h', 'price_change_6h', 'price_change_24h',
+                'volume_ma_24h', 'volume_std_24h']
     
     # Encode symbol if we want to use it, but for now let's keep it general or drop it.
     # Let's stick to numerical features for simplicity and generalization.
@@ -126,12 +148,35 @@ def main():
     y_reg = df_reg['target_deviation']
     
     ridge_model = train_regression(X_reg_scaled, y_reg)
+
+    # 5. Neural Network
+    nn_model = train_neural_network(X_reg_scaled, y_reg)
     
+    print("\n--- Saving Predictions for Visualization ---")
+    # 1. Clustering
+    df['cluster'] = clusters
+    
+    # 2. Classification
+    df['pred_class'] = rf_model.predict(X_scaled)
+    
+    # 3. Anomaly Detection
+    df['anomaly'] = anomalies
+    
+    # 4. Regression & NN (Need to align with df_reg indices)
+    # We will merge predictions back to original df
+    df['pred_regression'] = np.nan
+    df['pred_nn'] = np.nan
+    
+    # Predict on the regression subset
+    df.loc[df_reg.index, 'pred_regression'] = ridge_model.predict(X_reg_scaled)
+    df.loc[df_reg.index, 'pred_nn'] = nn_model.predict(X_reg_scaled)
+
     print("\nModeling Complete.")
     
-    # Save results sample
-    df.to_csv(os.path.join(RESULTS_DIR, 'modeling_results.csv'), index=False)
-    print(f"Saved results to {RESULTS_DIR}/modeling_results.csv")
+    # Save results with predictions
+    output_path = os.path.join(RESULTS_DIR, 'modeling_results_with_predictions.csv')
+    df.to_csv(output_path, index=False)
+    print(f"Saved results to {output_path}")
 
 if __name__ == "__main__":
     main()
