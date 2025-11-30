@@ -1,3 +1,4 @@
+import requests
 import ccxt
 import pandas as pd
 import time
@@ -17,15 +18,63 @@ SINCE_TIMESTAMP = int(START_DATE.timestamp() * 1000)
 # Kraken is good for USD pairs. Binance is good for liquid USDT pairs.
 TARGETS = {
     'coinbase': [
-        'USDT/USD', 'USDC/USD', 'DAI/USD', 'GUSD/USD', 'FRAX/USD',
+        'USDT/USD', 'USDC/USD', 'DAI/USD', 
         'BTC/USD', 'ETH/USD' # For correlation
     ],
-    # Some stablecoins might not have direct USD pairs on Kraken or are more active on Binance
-    # We will fetch what we can from Kraken, and others from Binance (against USDT usually, which is a limitation but acceptable)
     'binance': [
-        'BUSD/USDT', 'TUSD/USDT', 'USDP/USDT', 'USDe/USDT', 'FDUSD/USDT'
+        'BUSD/USDT', 'TUSD/USDT', 'USDP/USDT', 'USDE/USDT', 'FDUSD/USDT'
     ]
 }
+
+# CoinGecko Targets (ID -> Symbol Name for saving)
+# We use 90 days to get hourly data (public API limitation)
+COINGECKO_TARGETS = {
+    'frax': 'FRAX_USD',
+    'gemini-dollar': 'GUSD_USD'
+}
+
+def fetch_coingecko(coin_id, symbol_name):
+    """
+    Fetches OHLCV from CoinGecko.
+    """
+    print(f"Fetching {coin_id} ({symbol_name}) from CoinGecko...")
+    # 1-90 days = hourly data. We use 30 to be safe and ensure hourly.
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc?vs_currency=usd&days=30"
+    try:
+        r = requests.get(url)
+        if r.status_code != 200:
+            print(f"  Error {r.status_code}: {r.text}")
+            return None
+            
+        data = r.json()
+        if not data:
+            print(f"  No data found for {coin_id}")
+            return None
+            
+        print(f"  Fetched {len(data)} candles.")
+        
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close'])
+        
+        # Attempt to fetch volume
+        print(f"  Fetching volume for {coin_id}...")
+        v_url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days=30"
+        vr = requests.get(v_url)
+        if vr.status_code == 200:
+            v_data = vr.json()
+            v_df = pd.DataFrame(v_data['total_volumes'], columns=['timestamp', 'volume'])
+            
+            # Merge on timestamp
+            df = pd.merge_asof(df.sort_values('timestamp'), v_df.sort_values('timestamp'), on='timestamp', direction='nearest', tolerance=3600000)
+        else:
+            print(f"  Volume fetch failed: {vr.status_code}")
+            df['volume'] = 0
+            
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        return df
+        
+    except Exception as e:
+        print(f"  Error fetching {coin_id}: {e}")
+        return None
 
 def fetch_ohlcv(exchange_id, symbol, timeframe, since):
     """
@@ -75,6 +124,7 @@ def main():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
         
+    # CCXT Targets
     for exchange_name, symbols in TARGETS.items():
         for symbol in symbols:
             df = fetch_ohlcv(exchange_name, symbol, TIMEFRAME, SINCE_TIMESTAMP)
@@ -84,6 +134,15 @@ def main():
                 filepath = os.path.join(DATA_DIR, filename)
                 df.to_csv(filepath, index=False)
                 print(f"Saved {symbol} to {filepath}")
+                
+    # CoinGecko Targets
+    for coin_id, symbol_name in COINGECKO_TARGETS.items():
+        df = fetch_coingecko(coin_id, symbol_name)
+        if df is not None:
+            filename = f"{symbol_name}_coingecko.csv"
+            filepath = os.path.join(DATA_DIR, filename)
+            df.to_csv(filepath, index=False)
+            print(f"Saved {symbol_name} to {filepath}")
 
 if __name__ == "__main__":
     main()

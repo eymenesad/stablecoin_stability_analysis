@@ -83,8 +83,18 @@ def calculate_features(df, symbol_name):
         df[f'deviation_lag_{lag}h'] = df['deviation_pct'].shift(lag)
         df[f'volatility_lag_{lag}h'] = df['volatility_24h'].shift(lag)
         df[f'volume_lag_{lag}h'] = df['volume'].shift(lag)
+        
+    # 7. Advanced Features (Velocity & Z-Scores)
+    # Velocity (First Difference)
+    df['deviation_velocity'] = df['deviation_pct'].diff()
+    df['volume_velocity'] = df['volume'].pct_change()
     
-    # 7. FORECASTING TARGETS
+    # Rolling Z-Scores (24h)
+    # (Value - Mean) / Std
+    df['deviation_zscore_24h'] = (df['deviation_pct'] - df['deviation_pct'].rolling(24).mean()) / df['deviation_pct'].rolling(24).std()
+    df['volume_zscore_24h'] = (df['volume'] - df['volume_ma_24h']) / df['volume_std_24h']
+    
+    # 8. FORECASTING TARGETS
     # We want to predict stability/deviation in the FUTURE.
     # Target: Deviation 1 hour from now.
     df['target_close_1h'] = df['close'].shift(-1)
@@ -94,7 +104,7 @@ def calculate_features(df, symbol_name):
     df['target_close_6h'] = df['close'].shift(-6)
     df['target_deviation_pct_6h'] = (df['target_close_6h'] - 1.0) / 1.0
     
-    # Labeling based on FUTURE deviation
+    # Labeling based on FUTURE deviation (1h)
     def get_label(dev_pct):
         if pd.isna(dev_pct):
             return None
@@ -123,6 +133,10 @@ def add_market_context(target_df, btc_df, eth_df):
     # Calculate correlations (24h rolling)
     merged['corr_btc_24h'] = merged['close'].rolling(window=24).corr(merged['btc_close'])
     merged['corr_eth_24h'] = merged['close'].rolling(window=24).corr(merged['eth_close'])
+    
+    # Market Returns
+    merged['btc_return_24h'] = merged['btc_close'].pct_change(24)
+    merged['eth_return_24h'] = merged['eth_close'].pct_change(24)
     
     return merged
 
